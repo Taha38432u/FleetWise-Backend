@@ -1,0 +1,7 @@
+export enum UserRole {
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  ADMIN = 'ADMIN',
+  DISPATCHER = 'DISPATCHER',
+  DRIVER = 'DRIVER',
+  MECHANIC = 'MECHANIC',
+}

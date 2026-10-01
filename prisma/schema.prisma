@@ -1,0 +1,608 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider  = "prisma-client-js"
+  url       = env("DATABASE_URL")
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// AUTH MODULE
+// ============================================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  DISPATCHER
+  DRIVER
+  MECHANIC
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+model User {
+  id              String     @id @default(uuid())
+  email           String     @unique
+  password        String
+  firstName       String
+  lastName        String
+  phone           String?
+  role            UserRole   @default(DRIVER)
+  status          UserStatus @default(PENDING_VERIFICATION)
+  emailVerified   Boolean    @default(false)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  organizationId  String?
+
+  // Relations
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  driver              Driver?
+  notifications       Notification[]
+  subscription        Subscription?
+  createdRoutes       Route[]              @relation("CreatedRoutes")
+  maintenanceJobs     MaintenanceRecord[]  @relation("MaintenanceMechanic")
+  organization        Organization?        @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  ownerUserId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users    User[]
+  vehicles Vehicle[]
+
+  @@map("organizations")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("password_reset_tokens")
+}
+
+// ============================================
+// VEHICLE MODULE
+// ============================================
+
+enum VehicleStatus {
+  ACTIVE
+  IDLE
+  IN_MAINTENANCE
+  DECOMMISSIONED
+}
+
+enum VehicleType {
+  TRUCK
+  VAN
+  CAR
+  BIKE
+}
+
+// ============================================
+// DRIVER MODULE
+// ============================================
+
+enum LicenseStatus {
+  VALID
+  EXPIRED
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  ON_DUTY
+  OFF_DUTY
+  ON_LEAVE
+}
+
+enum MaintenanceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum RouteStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  MAINTENANCE_ALERT
+  ROUTE_ASSIGNED
+  VEHICLE_ISSUE
+  PREDICTIVE_ALERT
+  SYSTEM
+  BILLING
+  FINANCE
+}
+
+enum PlanType {
+  FREE
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  CANCELLED
+  PAST_DUE
+  TRIALING
+  PAYMENT_PENDING
+  EXPIRED
+}
+
+enum PaymentStatus {
+  NONE
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum AccountType {
+  CASH
+  FUEL
+  MAINTENANCE
+  PAYROLL
+  OPERATIONS
+  SAVINGS
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+  TRANSFER
+}
+
+enum RecurringInterval {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum GoalMetricType {
+  COST_REDUCTION
+  FUEL_EFFICIENCY
+  UTILIZATION
+  MAINTENANCE_REDUCTION
+}
+
+enum GoalStatus {
+  ON_TRACK
+  AT_RISK
+  ACHIEVED
+}
+
+model Driver {
+  id                    String             @id @default(uuid())
+  userId                String             @unique
+  licenseNumber         String             @unique
+  licenseExpiry         DateTime
+  licenseStatus         LicenseStatus      @default(PENDING_VERIFICATION)
+  licenseVerifiedAt     DateTime?
+  yearsOfExperience     Int
+  emergencyContact      String
+  emergencyContactPhone String
+  availabilityStatus    AvailabilityStatus @default(AVAILABLE)
+  totalRides            Int                @default(0)
+  totalDistance         Int                @default(0) // in km
+  lastWorkingDate       DateTime?
+  documentVerified      Boolean            @default(false)
+  backgroundCheckDone   Boolean            @default(false)
+  backgroundCheckDate   DateTime?
+  isDeleted             Boolean            @default(false)
+  isVehicleAssigned     Boolean            @default(false)
+  vehicleAssignedId     String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  // Relations
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedVehicles  Vehicle[]
+  drivingHistory    DrivingRecord[]
+  attendanceRecords AttendanceRecord[]
+  routes            Route[]
+
+  @@index([userId])
+  @@index([licenseStatus])
+  @@index([availabilityStatus])
+  @@index([vehicleAssignedId])
+  @@map("drivers")
+}
+
+model Vehicle {
+  fuelLogs                  FuelLog[]
+  id                       String        @id @default(uuid())
+  plate                    String        @unique
+  type                     VehicleType
+  model                    String
+  year                     Int
+  status                   VehicleStatus @default(ACTIVE)
+  mileage                  Int           @default(0) // in km
+  fuelEfficiency           Float         @default(0) // km/L
+  lastService              DateTime?
+  nextPredictedMaintenance DateTime?
+  assignedDriverId         String?
+  insuranceExpiry          DateTime?
+  fitnessExpiry            DateTime?
+  healthScore              Int           @default(100) // 0-100
+  isDeleted                Boolean       @default(false)
+  organizationId           String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  // Relations
+  assignedDriver     Driver?             @relation(fields: [assignedDriverId], references: [id], onDelete: SetNull)
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  maintenanceRecords MaintenanceRecord[]
+  gpsLogs            GpsLog[]
+  predictiveAlerts   PredictiveAlert[]
+  routes             Route[]
+
+  @@index([assignedDriverId])
+  @@index([organizationId])
+  @@map("vehicles")
+}
+
+model DrivingRecord {
+  id            String    @id @default(uuid())
+  driverId      String
+  startLocation String
+  endLocation   String
+  startTime     DateTime
+  endTime       DateTime?
+  distance      Int // in km
+  fuelUsed      Float // in liters
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@map("driving_records")
+}
+
+model AttendanceRecord {
+  id           String    @id @default(uuid())
+  driverId     String
+  date         DateTime
+  checkInTime  DateTime?
+  checkOutTime DateTime?
+  status       String // PRESENT, ABSENT, ON_LEAVE
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([date])
+  @@map("attendance_records")
+}
+
+model MaintenanceRecord {
+  id          String            @id @default(uuid())
+  vehicleId   String
+  type        String
+  description String
+  status      MaintenanceStatus @default(PENDING)
+  scheduledAt DateTime
+  completedAt DateTime?
+  cost        Float?
+  mechanicId  String?
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  vehicle  Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  mechanic User?   @relation("MaintenanceMechanic", fields: [mechanicId], references: [id], onDelete: SetNull)
+
+  @@index([vehicleId])
+  @@index([mechanicId])
+  @@index([status])
+  @@map("maintenance_records")
+}
+
+model Route {
+  id                       String      @id @default(uuid())
+  name                     String
+  startLocation            String
+  endLocation              String
+  scheduledAt              DateTime
+  status                   RouteStatus @default(SCHEDULED)
+  driverId                 String?
+  vehicleId                String?
+  createdById              String
+  actualStartAt            DateTime?
+  actualEndAt              DateTime?
+  estimatedDistance        Float?
+  actualDistance           Float?
+  estimatedDurationMinutes Int?
+  actualDurationMinutes    Int?
+  notes                    String?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+
+  driver    Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  createdBy User     @relation("CreatedRoutes", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([createdById])
+  @@index([status])
+  @@map("routes")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  actionUrl String?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model GpsLog {
+  id        String   @id @default(uuid())
+  vehicleId String
+  latitude  Float
+  longitude Float
+  speed     Float?
+  heading   Float?
+  timestamp DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, timestamp])
+  @@map("gps_logs")
+}
+
+model PredictiveAlert {
+  id                  String   @id @default(uuid())
+  vehicleId           String
+  predictedIssue      String
+  riskScore           Float
+  confidence          Float
+  riskLevel           String   @default("low")
+  maintenancePriority String   @default("monitor")
+  suggestedAction     String?
+  modelVersion        String?
+  dataQuality         String?
+  message             String?
+  isActioned          Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, isActioned])
+  @@index([riskLevel])
+  @@map("predictive_alerts")
+}
+
+model Subscription {
+  id                String             @id @default(uuid())
+  userId            String             @unique
+  provider          String             @default("STRIPE_TEST")
+  providerPaymentId String?
+  paymentStatus     PaymentStatus      @default(NONE)
+  paymentUrl        String?
+  pendingPlan       PlanType?
+  plan              PlanType           @default(FREE)
+  status            SubscriptionStatus @default(ACTIVE)
+  trialUsed         Boolean            @default(false)
+  trialStartAt      DateTime?
+  trialEndAt        DateTime?
+  currentPeriodEnd  DateTime?
+  cancelAtPeriodEnd Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Account {
+  id             String      @id @default(uuid())
+  name           String
+  type           AccountType
+  balance        Float       @default(0)
+  description    String?
+  isArchived     Boolean     @default(false)
+  organizationId String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  transactions            Transaction[]      @relation("AccountTransactions")
+  transferOutTransactions Transaction[]      @relation("TransferFrom")
+  transferInTransactions  Transaction[]      @relation("TransferTo")
+  budgets                 Budget[]
+  recurringExpenses       RecurringExpense[]
+
+  @@index([type])
+  @@index([organizationId])
+  @@map("accounts")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions      Transaction[]
+  budgets           Budget[]
+  recurringExpenses RecurringExpense[]
+
+  @@map("categories")
+}
+
+model Transaction {
+  id                  String          @id @default(uuid())
+  type                TransactionType
+  accountId           String?
+  categoryId          String?
+  fromAccountId       String?
+  toAccountId         String?
+  amount              Float
+  description         String
+  occurredAt          DateTime
+  vehicleId           String?
+  driverId            String?
+  routeId             String?
+  maintenanceRecordId String?
+  organizationId      String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  account     Account?  @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: SetNull)
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  fromAccount Account?  @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: SetNull)
+  toAccount   Account?  @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([occurredAt])
+  @@index([organizationId])
+  @@map("transactions")
+}
+
+model Budget {
+  id             String   @id @default(uuid())
+  name           String
+  amount         Float
+  used           Float    @default(0)
+  startDate      DateTime
+  endDate        DateTime
+  accountId      String?
+  categoryId     String?
+  notes          String?
+  organizationId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  account  Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([organizationId])
+  @@map("budgets")
+}
+
+model Goal {
+  id             String         @id @default(uuid())
+  title          String
+  metricType     GoalMetricType
+  targetValue    Float
+  currentValue   Float          @default(0)
+  dueDate        DateTime?
+  status         GoalStatus     @default(ON_TRACK)
+  notes          String?
+  organizationId String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([metricType, status])
+  @@index([organizationId])
+  @@map("goals")
+}
+
+model RecurringExpense {
+  id             String            @id @default(uuid())
+  name           String
+  amount         Float
+  interval       RecurringInterval
+  nextRunAt      DateTime
+  accountId      String?
+  categoryId     String?
+  description    String?
+  isActive       Boolean           @default(true)
+  organizationId String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  account  Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([nextRunAt, isActive])
+  @@index([organizationId])
+  @@map("recurring_expenses")
+}
+
+model FuelLog {
+  id        String   @id @default(uuid())
+  vehicleId String
+  liters    Float
+  cost      Float
+  odometer  Float
+  date      DateTime
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [id])
+
+  @@index([vehicleId])
+  @@map("fuel_logs")
+}
